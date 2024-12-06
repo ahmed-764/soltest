@@ -1,19 +1,62 @@
-// Initialize Solana connection with Chainstack endpoint
-const CHAINSTACK_ENDPOINT = 'https://solana-mainnet.core.chainstack.com';
-const WSS_ENDPOINT = 'wss://solana-mainnet.core.chainstack.com';
+// RPC Configuration
+const RPC_ENDPOINTS = [
+    'https://api.mainnet-beta.solana.com',
+    'https://solana-api.projectserum.com',
+    'https://rpc.ankr.com/solana'
+];
 
-// Connection configuration
-const connectionConfig = {
-    httpHeaders: {
-        'Authorization': 'Basic ' + btoa('unruffled-noether:dimple-simile-boxcar-jury-sulk-waggle')
-    },
-    commitment: 'confirmed',
-    wsEndpoint: WSS_ENDPOINT
-};
+let currentRpcIndex = 0;
+let connection;
 
-const connection = new solanaWeb3.Connection(CHAINSTACK_ENDPOINT, connectionConfig);
-let wsConnection = null;
-let walletSubscription = null;
+function getNextRpcEndpoint() {
+    currentRpcIndex = (currentRpcIndex + 1) % RPC_ENDPOINTS.length;
+    return RPC_ENDPOINTS[currentRpcIndex];
+}
+
+function createConnection() {
+    const endpoint = RPC_ENDPOINTS[currentRpcIndex];
+    return new solanaWeb3.Connection(endpoint, {
+        commitment: 'confirmed',
+        confirmTransactionInitialTimeout: 60000,
+        fetch: (url, options) => {
+            return fetch(url, {
+                ...options,
+                headers: {
+                    ...options?.headers,
+                    'Content-Type': 'application/json',
+                },
+            });
+        }
+    });
+}
+
+// Initialize connection
+connection = createConnection();
+
+// Rate limiting configuration
+const REQUEST_BATCH_SIZE = 3;
+const BATCH_DELAY_MS = 1000;
+const MAX_RETRIES = 3;
+
+async function retryWithFallback(operation, retries = MAX_RETRIES) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            return await operation();
+        } catch (error) {
+            console.error(`Attempt ${i + 1} failed:`, error);
+            
+            if (error.message.includes('rate limit') || error.message.includes('429')) {
+                if (i < retries - 1) {
+                    // Switch to next RPC endpoint
+                    connection = new solanaWeb3.Connection(getNextRpcEndpoint());
+                    await delay(BATCH_DELAY_MS); // Wait before retry
+                    continue;
+                }
+            }
+            throw error;
+        }
+    }
+}
 
 // DOM Elements
 const walletInput = document.getElementById('wallet-address');
@@ -124,44 +167,22 @@ async function updateBalance(address) {
     }
 }
 
-// Add rate limiting configuration
-const REQUEST_BATCH_SIZE = 5;
-const BATCH_DELAY_MS = 500;
-
-// Utility function to add delay between requests
-function delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// Utility function to batch process transactions
-async function processBatch(items, processFn) {
-    const results = [];
-    for (let i = 0; i < items.length; i += REQUEST_BATCH_SIZE) {
-        const batch = items.slice(i, i + REQUEST_BATCH_SIZE);
-        const batchResults = await Promise.all(batch.map(processFn));
-        results.push(...batchResults);
-        if (i + REQUEST_BATCH_SIZE < items.length) {
-            await delay(BATCH_DELAY_MS);
-        }
-    }
-    return results;
-}
-
 async function updateTransactions(address) {
     try {
         const publicKey = new solanaWeb3.PublicKey(address);
         
-        // Show loading state
         transactionsTable.innerHTML = '<tr><td colspan="4" class="loading-text">Loading transactions...</td></tr>';
         
-        // Fetch signatures with options
-        const signatures = await connection.getConfirmedSignaturesForAddress2(
-            publicKey,
-            {
-                limit: 15, // Reduced from 20 to lower rate limit impact
-                commitment: 'confirmed'
-            }
-        );
+        // Fetch signatures with retries and fallback
+        const signatures = await retryWithFallback(async () => {
+            return await connection.getConfirmedSignaturesForAddress2(
+                publicKey,
+                {
+                    limit: 10, // Reduced limit
+                    commitment: 'confirmed'
+                }
+            );
+        });
         
         if (signatures.length === 0) {
             transactionsTable.innerHTML = '<tr><td colspan="4" class="no-data">No transactions found</td></tr>';
@@ -170,18 +191,28 @@ async function updateTransactions(address) {
 
         transactionsTable.innerHTML = '';
         
-        // Process transactions in batches
-        const transactions = await processBatch(signatures, async (sig) => {
-            try {
-                return await connection.getTransaction(sig.signature, {
-                    commitment: 'confirmed',
-                    maxSupportedTransactionVersion: 0
-                });
-            } catch (error) {
-                console.error('Error fetching transaction:', error);
-                return null;
-            }
-        });
+        // Process transactions in smaller batches with retries
+        const transactions = [];
+        for (let i = 0; i < signatures.length; i += REQUEST_BATCH_SIZE) {
+            const batch = signatures.slice(i, i + REQUEST_BATCH_SIZE);
+            const batchResults = await Promise.all(
+                batch.map(sig => 
+                    retryWithFallback(async () => {
+                        try {
+                            return await connection.getTransaction(sig.signature, {
+                                commitment: 'confirmed',
+                                maxSupportedTransactionVersion: 0
+                            });
+                        } catch (error) {
+                            console.error('Error fetching transaction:', error);
+                            return null;
+                        }
+                    })
+                )
+            );
+            transactions.push(...batchResults);
+            await delay(BATCH_DELAY_MS);
+        }
 
         let hasValidTransactions = false;
 
@@ -199,15 +230,12 @@ async function updateTransactions(address) {
                 const amount = (postBalance - preBalance) / solanaWeb3.LAMPORTS_PER_SOL;
                 const type = amount >= 0 ? 'Received' : 'Sent';
                 const fee = tx.meta.fee / solanaWeb3.LAMPORTS_PER_SOL;
-
-                // Simplified transaction type detection
                 const status = tx.meta.err ? 'Failed' : 'Success';
-                let typeDisplay = type;
                 
                 row.innerHTML = `
                     <td>${date.toLocaleString()}</td>
                     <td>
-                        <span class="tx-type ${type.toLowerCase()}">${typeDisplay}</span>
+                        <span class="tx-type ${type.toLowerCase()}">${type}</span>
                         <span class="tx-status ${status.toLowerCase()}">${status}</span>
                     </td>
                     <td>
@@ -248,25 +276,18 @@ async function updateTransactions(address) {
 
     } catch (error) {
         console.error('Error updating transactions:', error);
-        if (error.message.includes('rate limit')) {
-            transactionsTable.innerHTML = `
-                <tr>
-                    <td colspan="4" class="error-text">
-                        Rate limit reached. Please wait a moment and try again.
-                    </td>
-                </tr>
-            `;
-            showError('Rate limit reached. Please wait a moment before refreshing.');
-        } else {
-            transactionsTable.innerHTML = `
-                <tr>
-                    <td colspan="4" class="error-text">
-                        Failed to fetch transaction history. Please try again.
-                    </td>
-                </tr>
-            `;
-            showError('Failed to fetch transaction history');
-        }
+        const errorMessage = error.message.includes('rate limit') 
+            ? 'Rate limit reached. Switching to alternate RPC endpoint...'
+            : 'Failed to fetch transaction history. Please try again.';
+            
+        transactionsTable.innerHTML = `
+            <tr>
+                <td colspan="4" class="error-text">
+                    ${errorMessage}
+                </td>
+            </tr>
+        `;
+        showError(errorMessage);
     }
 }
 
@@ -463,7 +484,8 @@ function toggleLiveUpdates(event) {
 
     if (event.target.checked) {
         try {
-            wsConnection = new WebSocket(WSS_ENDPOINT);
+            const endpoint = RPC_ENDPOINTS[currentRpcIndex].replace('https', 'wss');
+            wsConnection = new WebSocket(endpoint);
             
             // Add authorization header to WebSocket connection
             wsConnection.onopen = () => {
