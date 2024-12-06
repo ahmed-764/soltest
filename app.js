@@ -127,28 +127,109 @@ async function updateBalance(address) {
 async function updateTransactions(address) {
     try {
         const publicKey = new solanaWeb3.PublicKey(address);
-        const signatures = await connection.getConfirmedSignaturesForAddress2(publicKey, { limit: 10 });
         
-        transactionsTable.innerHTML = '';
-        for (const sig of signatures) {
-            const tx = await connection.getTransaction(sig.signature);
-            if (!tx) continue;
-
-            const row = document.createElement('tr');
-            const date = new Date(tx.blockTime * 1000);
-            const amount = tx.meta?.postBalances[0] - tx.meta?.preBalances[0];
-            const type = amount > 0 ? 'Received' : 'Sent';
-            
-            row.innerHTML = `
-                <td>${date.toLocaleString()}</td>
-                <td class="${type.toLowerCase()}">${type}</td>
-                <td>${Math.abs(amount / solanaWeb3.LAMPORTS_PER_SOL).toFixed(4)} SOL</td>
-                <td><a href="https://explorer.solana.com/tx/${sig.signature}" target="_blank">${sig.signature.slice(0, 8)}...</a></td>
-            `;
-            transactionsTable.appendChild(row);
+        // Show loading state
+        transactionsTable.innerHTML = '<tr><td colspan="4" class="loading-text">Loading transactions...</td></tr>';
+        
+        // Fetch signatures with options
+        const signatures = await connection.getConfirmedSignaturesForAddress2(
+            publicKey,
+            {
+                limit: 20,
+                commitment: 'confirmed'
+            }
+        );
+        
+        if (signatures.length === 0) {
+            transactionsTable.innerHTML = '<tr><td colspan="4" class="no-data">No transactions found</td></tr>';
+            return;
         }
+
+        transactionsTable.innerHTML = '';
+        
+        // Process transactions in parallel for better performance
+        const transactions = await Promise.all(
+            signatures.map(sig => 
+                connection.getTransaction(sig.signature, {
+                    commitment: 'confirmed',
+                    maxSupportedTransactionVersion: 0
+                })
+            )
+        );
+
+        transactions.forEach((tx, index) => {
+            if (!tx) return;
+
+            const signature = signatures[index].signature;
+            const row = document.createElement('tr');
+            
+            try {
+                const date = new Date(tx.blockTime * 1000);
+                const preBalance = tx.meta.preBalances[0];
+                const postBalance = tx.meta.postBalances[0];
+                const amount = (postBalance - preBalance) / solanaWeb3.LAMPORTS_PER_SOL;
+                const type = amount >= 0 ? 'Received' : 'Sent';
+                const fee = tx.meta.fee / solanaWeb3.LAMPORTS_PER_SOL;
+
+                // Get transaction type and status
+                let status = tx.meta.err ? 'Failed' : 'Success';
+                let typeDisplay = type;
+                if (tx.transaction.message.instructions.length > 0) {
+                    const instruction = tx.transaction.message.instructions[0];
+                    if (instruction.programId.toString() === 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA') {
+                        typeDisplay = 'Token Transfer';
+                    }
+                }
+                
+                row.innerHTML = `
+                    <td>${date.toLocaleString()}</td>
+                    <td>
+                        <span class="tx-type ${type.toLowerCase()}">${typeDisplay}</span>
+                        <span class="tx-status ${status.toLowerCase()}">${status}</span>
+                    </td>
+                    <td>
+                        <span class="amount ${type.toLowerCase()}">
+                            ${Math.abs(amount).toFixed(4)} SOL
+                        </span>
+                        <span class="fee">Fee: ${fee.toFixed(6)} SOL</span>
+                    </td>
+                    <td>
+                        <a href="https://explorer.solana.com/tx/${signature}" 
+                           target="_blank" 
+                           title="${signature}">
+                            ${signature.slice(0, 8)}...${signature.slice(-8)}
+                        </a>
+                    </td>
+                `;
+
+                // Add hover effect for transaction details
+                row.title = `
+                    Type: ${typeDisplay}
+                    Status: ${status}
+                    Amount: ${Math.abs(amount).toFixed(4)} SOL
+                    Fee: ${fee.toFixed(6)} SOL
+                    Date: ${date.toLocaleString()}
+                `;
+            } catch (err) {
+                console.error('Error processing transaction:', err);
+                row.innerHTML = `
+                    <td colspan="4" class="error-text">
+                        Error processing transaction ${signature.slice(0, 8)}...
+                    </td>
+                `;
+            }
+            
+            transactionsTable.appendChild(row);
+        });
     } catch (error) {
         console.error('Error updating transactions:', error);
+        transactionsTable.innerHTML = `
+            <tr>
+                <td colspan="4" class="error-text">
+                    Failed to fetch transaction history. Please try again.
+                </td>
+            </tr>
+        `;
         showError('Failed to fetch transaction history');
     }
 }
