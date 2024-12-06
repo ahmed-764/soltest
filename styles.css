@@ -88,6 +88,84 @@ button:hover {
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
+.pnl-overview {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+}
+
+.pnl-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.pnl-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+}
+
+.positive {
+    color: var(--solana-teal);
+}
+
+.negative {
+    color: #ff4444;
+}
+
+.wallet-activity {
+    background: var(--dark-card);
+    padding: 1.5rem;
+    border-radius: 12px;
+    margin-bottom: 2rem;
+}
+
+.activity-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.activity-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+}
+
+.activity-item span:first-child {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+}
+
+.activity-item span:last-child {
+    font-size: 1.2rem;
+    color: var(--solana-teal);
+}
+
+.activity-chart {
+    width: 100%;
+    height: 300px;
+    margin-top: 1rem;
+    position: relative;
+}
+
+.activity-chart canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
 h2 {
     color: var(--solana-teal);
     margin-bottom: 1.5rem;

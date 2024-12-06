@@ -27,9 +27,47 @@
                         <h3>SOL Balance</h3>
                         <p id="sol-amount">0 SOL</p>
                     </div>
+                    <div class="pnl-overview">
+                        <h3>Realized PnL</h3>
+                        <div class="pnl-stats">
+                            <div class="pnl-item">
+                                <span>Total Profit/Loss:</span>
+                                <span id="total-pnl">0 SOL</span>
+                            </div>
+                            <div class="pnl-item">
+                                <span>ROI:</span>
+                                <span id="roi-percentage">0%</span>
+                            </div>
+                            <div class="pnl-item">
+                                <span>Total Volume:</span>
+                                <span id="total-volume">0 SOL</span>
+                            </div>
+                        </div>
+                    </div>
                     <div class="tokens">
                         <h3>SPL Tokens</h3>
                         <div id="token-list"></div>
+                    </div>
+                </div>
+
+                <div class="wallet-activity">
+                    <h2>Wallet Activity</h2>
+                    <div class="activity-stats">
+                        <div class="activity-item">
+                            <span>24h Transactions:</span>
+                            <span id="24h-tx-count">0</span>
+                        </div>
+                        <div class="activity-item">
+                            <span>7d Transactions:</span>
+                            <span id="7d-tx-count">0</span>
+                        </div>
+                        <div class="activity-item">
+                            <span>30d Volume:</span>
+                            <span id="30d-volume">0 SOL</span>
+                        </div>
+                    </div>
+                    <div class="activity-chart">
+                        <canvas id="activity-chart"></canvas>
                     </div>
                 </div>
 

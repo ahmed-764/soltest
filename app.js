@@ -25,6 +25,24 @@ const transactionsTable = document.getElementById('transactions').getElementsByT
 const nftGrid = document.getElementById('nft-grid');
 const liveUpdates = document.getElementById('live-updates');
 
+// PnL Elements
+const totalPnl = document.getElementById('total-pnl');
+const roiPercentage = document.getElementById('roi-percentage');
+const totalVolume = document.getElementById('total-volume');
+
+// Activity Elements
+const tx24h = document.getElementById('24h-tx-count');
+const tx7d = document.getElementById('7d-tx-count');
+const tx30dVolume = document.getElementById('30d-volume');
+const activityChart = document.getElementById('activity-chart').getContext('2d');
+
+// Load Chart.js
+const chartScript = document.createElement('script');
+chartScript.src = 'https://cdn.jsdelivr.net/npm/chart.js';
+document.head.appendChild(chartScript);
+
+let activityChartInstance = null;
+
 // Event Listeners
 trackButton.addEventListener('click', trackWallet);
 liveUpdates.addEventListener('change', toggleLiveUpdates);
@@ -41,7 +59,9 @@ async function trackWallet() {
         await Promise.all([
             updateBalance(address),
             updateTransactions(address),
-            updateNFTs(address)
+            updateNFTs(address),
+            calculatePnL(address),
+            updateWalletActivity(address)
         ]);
     } catch (error) {
         console.error('Error tracking wallet:', error);
@@ -159,6 +179,160 @@ async function updateNFTs(address) {
     } catch (error) {
         console.error('Error updating NFTs:', error);
         showError('Failed to fetch NFTs');
+    }
+}
+
+async function calculatePnL(address) {
+    try {
+        const publicKey = new solanaWeb3.PublicKey(address);
+        const signatures = await connection.getConfirmedSignaturesForAddress2(publicKey, { limit: 1000 });
+        
+        let totalPnLValue = 0;
+        let totalVolumeValue = 0;
+        let initialBalance = 0;
+        
+        for (const sig of signatures.reverse()) {
+            try {
+                const tx = await connection.getTransaction(sig.signature);
+                if (!tx) continue;
+
+                const preBalance = tx.meta.preBalances[0];
+                const postBalance = tx.meta.postBalances[0];
+                const balanceChange = (postBalance - preBalance) / solanaWeb3.LAMPORTS_PER_SOL;
+                
+                if (initialBalance === 0) {
+                    initialBalance = preBalance / solanaWeb3.LAMPORTS_PER_SOL;
+                }
+
+                if (balanceChange !== 0) {
+                    totalPnLValue += balanceChange;
+                    totalVolumeValue += Math.abs(balanceChange);
+                }
+            } catch (txError) {
+                console.error('Error processing transaction:', txError);
+            }
+        }
+
+        // Update PnL display
+        totalPnl.textContent = `${totalPnLValue.toFixed(4)} SOL`;
+        totalPnl.className = totalPnLValue >= 0 ? 'positive' : 'negative';
+
+        // Calculate and update ROI
+        const roi = initialBalance !== 0 ? (totalPnLValue / initialBalance) * 100 : 0;
+        roiPercentage.textContent = `${roi.toFixed(2)}%`;
+        roiPercentage.className = roi >= 0 ? 'positive' : 'negative';
+
+        // Update total volume
+        totalVolume.textContent = `${totalVolumeValue.toFixed(4)} SOL`;
+
+    } catch (error) {
+        console.error('Error calculating PnL:', error);
+        showError('Failed to calculate PnL');
+    }
+}
+
+async function updateWalletActivity(address) {
+    try {
+        const publicKey = new solanaWeb3.PublicKey(address);
+        const currentTime = new Date();
+        const oneDayAgo = new Date(currentTime - 24 * 60 * 60 * 1000);
+        const sevenDaysAgo = new Date(currentTime - 7 * 24 * 60 * 60 * 1000);
+        const thirtyDaysAgo = new Date(currentTime - 30 * 24 * 60 * 60 * 1000);
+
+        const signatures = await connection.getConfirmedSignaturesForAddress2(publicKey, { limit: 1000 });
+        
+        let tx24hCount = 0;
+        let tx7dCount = 0;
+        let volume30d = 0;
+        const dailyVolumes = new Array(30).fill(0);
+
+        for (const sig of signatures) {
+            try {
+                const tx = await connection.getTransaction(sig.signature);
+                if (!tx || !tx.blockTime) continue;
+
+                const txDate = new Date(tx.blockTime * 1000);
+                const balanceChange = Math.abs(tx.meta.postBalances[0] - tx.meta.preBalances[0]) / solanaWeb3.LAMPORTS_PER_SOL;
+
+                if (txDate >= oneDayAgo) {
+                    tx24hCount++;
+                }
+                if (txDate >= sevenDaysAgo) {
+                    tx7dCount++;
+                }
+                if (txDate >= thirtyDaysAgo) {
+                    volume30d += balanceChange;
+                    const daysAgo = Math.floor((currentTime - txDate) / (24 * 60 * 60 * 1000));
+                    if (daysAgo < 30) {
+                        dailyVolumes[daysAgo] += balanceChange;
+                    }
+                }
+            } catch (txError) {
+                console.error('Error processing transaction:', txError);
+            }
+        }
+
+        // Update activity stats
+        tx24h.textContent = tx24hCount;
+        tx7d.textContent = tx7dCount;
+        tx30dVolume.textContent = `${volume30d.toFixed(2)} SOL`;
+
+        // Update activity chart
+        if (window.Chart && activityChart) {
+            if (activityChartInstance) {
+                activityChartInstance.destroy();
+            }
+
+            const labels = Array.from({length: 30}, (_, i) => `${29 - i}d ago`).reverse();
+            
+            activityChartInstance = new Chart(activityChart, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Daily Volume (SOL)',
+                        data: dailyVolumes.reverse(),
+                        borderColor: '#00FFA3',
+                        backgroundColor: 'rgba(0, 255, 163, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            },
+                            ticks: {
+                                color: '#B0B0B0'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            },
+                            ticks: {
+                                color: '#B0B0B0',
+                                maxRotation: 45,
+                                minRotation: 45
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+    } catch (error) {
+        console.error('Error updating wallet activity:', error);
+        showError('Failed to update wallet activity');
     }
 }
 
