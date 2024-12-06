@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solana Wallet Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Solana Wallet Tracker</h1>
+            <p class="description">Track wallet balances, transactions, and NFTs in real-time</p>
+        </header>
+
+        <main>
+            <section id="wallet-input">
+                <input type="text" id="wallet-address" placeholder="Enter Solana wallet address">
+                <button id="track-wallet">Track Wallet</button>
+            </section>
+
+            <section id="dashboard" class="hidden">
+                <div class="balance-overview">
+                    <h2>Balance Overview</h2>
+                    <div class="sol-balance">
+                        <h3>SOL Balance</h3>
+                        <p id="sol-amount">0 SOL</p>
+                    </div>
+                    <div class="tokens">
+                        <h3>SPL Tokens</h3>
+                        <div id="token-list"></div>
+                    </div>
+                </div>
+
+                <div class="transaction-history">
+                    <h2>Transaction History</h2>
+                    <div class="toggle-container">
+                        <label class="switch">
+                            <input type="checkbox" id="live-updates">
+                            <span class="slider"></span>
+                        </label>
+                        <span>Live Updates</span>
+                    </div>
+                    <table id="transactions">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Amount</th>
+                                <th>Signature</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <div class="nft-gallery">
+                    <h2>NFT Gallery</h2>
+                    <div id="nft-grid"></div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
