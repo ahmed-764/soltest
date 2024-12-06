@@ -124,6 +124,29 @@ async function updateBalance(address) {
     }
 }
 
+// Add rate limiting configuration
+const REQUEST_BATCH_SIZE = 5;
+const BATCH_DELAY_MS = 500;
+
+// Utility function to add delay between requests
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Utility function to batch process transactions
+async function processBatch(items, processFn) {
+    const results = [];
+    for (let i = 0; i < items.length; i += REQUEST_BATCH_SIZE) {
+        const batch = items.slice(i, i + REQUEST_BATCH_SIZE);
+        const batchResults = await Promise.all(batch.map(processFn));
+        results.push(...batchResults);
+        if (i + REQUEST_BATCH_SIZE < items.length) {
+            await delay(BATCH_DELAY_MS);
+        }
+    }
+    return results;
+}
+
 async function updateTransactions(address) {
     try {
         const publicKey = new solanaWeb3.PublicKey(address);
@@ -135,7 +158,7 @@ async function updateTransactions(address) {
         const signatures = await connection.getConfirmedSignaturesForAddress2(
             publicKey,
             {
-                limit: 20,
+                limit: 15, // Reduced from 20 to lower rate limit impact
                 commitment: 'confirmed'
             }
         );
@@ -147,18 +170,24 @@ async function updateTransactions(address) {
 
         transactionsTable.innerHTML = '';
         
-        // Process transactions in parallel for better performance
-        const transactions = await Promise.all(
-            signatures.map(sig => 
-                connection.getTransaction(sig.signature, {
+        // Process transactions in batches
+        const transactions = await processBatch(signatures, async (sig) => {
+            try {
+                return await connection.getTransaction(sig.signature, {
                     commitment: 'confirmed',
                     maxSupportedTransactionVersion: 0
-                })
-            )
-        );
+                });
+            } catch (error) {
+                console.error('Error fetching transaction:', error);
+                return null;
+            }
+        });
+
+        let hasValidTransactions = false;
 
         transactions.forEach((tx, index) => {
             if (!tx) return;
+            hasValidTransactions = true;
 
             const signature = signatures[index].signature;
             const row = document.createElement('tr');
@@ -171,15 +200,9 @@ async function updateTransactions(address) {
                 const type = amount >= 0 ? 'Received' : 'Sent';
                 const fee = tx.meta.fee / solanaWeb3.LAMPORTS_PER_SOL;
 
-                // Get transaction type and status
-                let status = tx.meta.err ? 'Failed' : 'Success';
+                // Simplified transaction type detection
+                const status = tx.meta.err ? 'Failed' : 'Success';
                 let typeDisplay = type;
-                if (tx.transaction.message.instructions.length > 0) {
-                    const instruction = tx.transaction.message.instructions[0];
-                    if (instruction.programId.toString() === 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA') {
-                        typeDisplay = 'Token Transfer';
-                    }
-                }
                 
                 row.innerHTML = `
                     <td>${date.toLocaleString()}</td>
@@ -191,24 +214,15 @@ async function updateTransactions(address) {
                         <span class="amount ${type.toLowerCase()}">
                             ${Math.abs(amount).toFixed(4)} SOL
                         </span>
-                        <span class="fee">Fee: ${fee.toFixed(6)} SOL</span>
+                        ${fee > 0 ? `<span class="fee">Fee: ${fee.toFixed(6)} SOL</span>` : ''}
                     </td>
                     <td>
                         <a href="https://explorer.solana.com/tx/${signature}" 
                            target="_blank" 
-                           title="${signature}">
+                           title="View on Solana Explorer">
                             ${signature.slice(0, 8)}...${signature.slice(-8)}
                         </a>
                     </td>
-                `;
-
-                // Add hover effect for transaction details
-                row.title = `
-                    Type: ${typeDisplay}
-                    Status: ${status}
-                    Amount: ${Math.abs(amount).toFixed(4)} SOL
-                    Fee: ${fee.toFixed(6)} SOL
-                    Date: ${date.toLocaleString()}
                 `;
             } catch (err) {
                 console.error('Error processing transaction:', err);
@@ -221,16 +235,38 @@ async function updateTransactions(address) {
             
             transactionsTable.appendChild(row);
         });
+
+        if (!hasValidTransactions) {
+            transactionsTable.innerHTML = `
+                <tr>
+                    <td colspan="4" class="no-data">
+                        No valid transactions found in the recent history
+                    </td>
+                </tr>
+            `;
+        }
+
     } catch (error) {
         console.error('Error updating transactions:', error);
-        transactionsTable.innerHTML = `
-            <tr>
-                <td colspan="4" class="error-text">
-                    Failed to fetch transaction history. Please try again.
-                </td>
-            </tr>
-        `;
-        showError('Failed to fetch transaction history');
+        if (error.message.includes('rate limit')) {
+            transactionsTable.innerHTML = `
+                <tr>
+                    <td colspan="4" class="error-text">
+                        Rate limit reached. Please wait a moment and try again.
+                    </td>
+                </tr>
+            `;
+            showError('Rate limit reached. Please wait a moment before refreshing.');
+        } else {
+            transactionsTable.innerHTML = `
+                <tr>
+                    <td colspan="4" class="error-text">
+                        Failed to fetch transaction history. Please try again.
+                    </td>
+                </tr>
+            `;
+            showError('Failed to fetch transaction history');
+        }
     }
 }
 

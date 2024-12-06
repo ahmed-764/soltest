@@ -302,6 +302,131 @@ input:checked + .slider:before {
     display: none;
 }
 
+/* Transaction History Styles */
+.transaction-history {
+    overflow-x: auto;
+    margin-top: 2rem;
+}
+
+.loading-text, .error-text, .no-data {
+    text-align: center;
+    padding: 1rem;
+    color: var(--text-secondary);
+}
+
+.error-text {
+    color: #ff4444;
+}
+
+.loading-text {
+    color: var(--solana-teal);
+}
+
+.tx-type, .tx-status {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    margin-right: 0.5rem;
+}
+
+.tx-type.received {
+    background-color: rgba(0, 255, 163, 0.1);
+    color: var(--solana-teal);
+}
+
+.tx-type.sent {
+    background-color: rgba(220, 31, 255, 0.1);
+    color: var(--solana-purple);
+}
+
+.tx-status.success {
+    background-color: rgba(0, 255, 163, 0.1);
+    color: var(--solana-teal);
+}
+
+.tx-status.failed {
+    background-color: rgba(255, 68, 68, 0.1);
+    color: #ff4444;
+}
+
+.amount {
+    display: block;
+    font-weight: 500;
+}
+
+.amount.received {
+    color: var(--solana-teal);
+}
+
+.amount.sent {
+    color: var(--solana-purple);
+}
+
+.fee {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+
+th, td {
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+th {
+    color: var(--solana-teal);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+td {
+    vertical-align: middle;
+}
+
+tr:hover {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+td a {
+    color: var(--solana-purple);
+    text-decoration: none;
+    transition: opacity 0.2s;
+}
+
+td a:hover {
+    opacity: 0.8;
+}
+
+/* Responsive table */
+@media (max-width: 768px) {
+    .transaction-history {
+        margin: 1rem -1rem;
+        width: calc(100% + 2rem);
+    }
+    
+    th, td {
+        padding: 0.75rem;
+    }
+    
+    .tx-type, .tx-status {
+        padding: 0.15rem 0.35rem;
+        font-size: 0.8rem;
+    }
+    
+    .fee {
+        font-size: 0.75rem;
+    }
+}
+
 @media (max-width: 768px) {
     .container {
         padding: 1rem;
